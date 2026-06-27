@@ -40,4 +40,4 @@ captures/
 .externalNativeBuild
 
 # Keystore files (uncomment if you have a keystore)
-#*.jks
+#*.jks.idea/
