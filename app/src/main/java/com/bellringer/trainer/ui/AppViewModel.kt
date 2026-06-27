@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private val store = CalibrationStore(app)
-    private val audio = BellAudioEngine()
+    private val audio = BellAudioEngine(getApplication<Application>().applicationContext)
 
     private val _ui = MutableStateFlow(TrainerUiState())
     val ui: StateFlow<TrainerUiState> = _ui.asStateFlow()
