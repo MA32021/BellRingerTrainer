@@ -10,27 +10,30 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarkerResult
 import com.bellringer.trainer.model.HandFrame
 import com.bellringer.trainer.model.Landmark
-import com.bellringer.trainer.cv.LandmarkerBridge
-
 
 /**
  * Wraps MediaPipe Hand Landmarker in LIVE_STREAM mode.
  * Input bitmaps are expected ALREADY MIRRORED (front camera).
+ * Applies Kalman smoothing to key landmarks before emitting frames.
  */
+class HandLandmarkerHelper(
+    context: Context,
+    private val onFrame: (HandFrame) -> Unit
+) : LandmarkerBridge {
 
-    class HandLandmarkerHelper(
-        context: Context,
-        private val onFrame: (HandFrame) -> Unit
-    ) : LandmarkerBridge {
-
-        companion object {
+    companion object {
         const val WRIST = 0
         const val INDEX_TIP = 8
         const val MIDDLE_MCP = 9
     }
 
-    // Nullable + var: позволяет присвоить null при ошибке инициализации
     private var landmarker: HandLandmarker? = null
+
+    // ✅ Фильтр Калмана для сглаживания координат
+    private val smoother = LandmarkSmoother(
+        processNoise = 0.02f,
+        measurementNoise = 0.005f
+    )
 
     init {
         landmarker = try {
@@ -54,7 +57,6 @@ import com.bellringer.trainer.cv.LandmarkerBridge
         }
     }
 
-    /** Pass a mirrored bitmap with monotonic timestamp (ms). */
     override fun detectAsync(mirrored: Bitmap, timestampMs: Long) {
         val lm = landmarker ?: run {
             Log.w("HandLandmarker", "Landmarker not initialized, skipping frame")
@@ -81,17 +83,25 @@ import com.bellringer.trainer.cv.LandmarkerBridge
                 leftWrist = pt(WRIST); leftIndex = pt(INDEX_TIP)
             }
         }
-        onFrame(
-            HandFrame(
-                timestampMs = ts,
-                leftWrist = leftWrist, leftIndexTip = leftIndex,
-                rightWrist = rightWrist, rightMiddleMcp = rightMcp
-            )
+
+        // ✅ Сброс фильтров при потере трекинга руки
+        if (leftWrist == null) smoother.resetHand(isLeft = true)
+        if (rightWrist == null) smoother.resetHand(isLeft = false)
+
+        // ✅ Сглаживание через фильтр Калмана ПЕРЕД отправкой в FSM
+        val rawFrame = HandFrame(
+            timestampMs = ts,
+            leftWrist = leftWrist,
+            leftIndexTip = leftIndex,
+            rightWrist = rightWrist,
+            rightMiddleMcp = rightMcp
         )
+        val smoothedFrame = smoother.smooth(rawFrame)
+
+        onFrame(smoothedFrame)
     }
 
     override fun close() {
         landmarker?.close()
     }
 }
-

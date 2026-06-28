@@ -25,5 +25,6 @@ class HandLandmarkerHelper(
     override fun close() {
         // No-op
     }
+
 }
 
