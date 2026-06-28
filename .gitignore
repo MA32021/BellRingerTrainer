@@ -41,3 +41,5 @@ captures/
 
 # Keystore files (uncomment if you have a keystore)
 #*.jks.idea/
+.DS_Store
+echo

@@ -15,21 +15,39 @@ android {
         versionCode = 1
         versionName = "1.0"
     }
+
+    // ✅ Product flavors для изоляции MediaPipe на эмуляторе
+    flavorDimensions += "device"
+    productFlavors {
+        create("real") {
+            dimension = "device"
+        }
+        create("emulator") {
+            dimension = "device"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
-    // Do not compress the MediaPipe model
+
     androidResources { noCompress += "task" }
-    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+
+    packaging {
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+        jniLibs { useLegacyPackaging = true }
+    }
 }
 
 dependencies {
@@ -50,13 +68,11 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$camerax")
     implementation("androidx.camera:camera-view:$camerax")
 
-    // MediaPipe Hand Landmarker
-    implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    // ✅ MediaPipe ТОЛЬКО для real flavor
+    "realImplementation"("com.google.mediapipe:tasks-vision:0.10.21")
 
-    // DataStore for calibration persistence
+    // DataStore
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-
     implementation("com.jakewharton.timber:timber:5.0.1")
 }
