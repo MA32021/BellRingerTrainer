@@ -35,7 +35,6 @@ class BellAudioEngine(private val context: Context) {
                 val key = fileName.substringBeforeLast(".")
                 soundMap[key] = id
                 fd.close()
-                Log.d(TAG, "Loaded: $key -> $id")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to open asset: bells/$fileName", e)
             }

@@ -3,55 +3,66 @@ package com.bellringer.trainer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.bellringer.trainer.ui.AppNavigation
 import com.bellringer.trainer.ui.AppViewModel
 
 class MainActivity : ComponentActivity() {
-
-    private val viewModel: AppViewModel by viewModels()
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // ✅ Устанавливаем callback выхода ДО setContent
-        viewModel.onExitRequest = { finish() }
-
+        enableEdgeToEdge()
         setContent {
             MaterialTheme {
-                var granted by remember {
-                    mutableStateOf(
-                        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                                == PackageManager.PERMISSION_GRANTED
-                    )
-                }
-                val launcher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) { granted = it }
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val vm: AppViewModel = viewModel()
 
-                LaunchedEffect(Unit) {
-                    if (!granted) launcher.launch(Manifest.permission.CAMERA)
-                }
+                    var hasCameraPermission by remember {
+                        mutableStateOf(
+                            ContextCompat.checkSelfPermission(
+                                this@MainActivity,
+                                Manifest.permission.CAMERA
+                            ) == PackageManager.PERMISSION_GRANTED
+                        )
+                    }
 
-                if (granted) AppNavigation()
-                else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Camera permission is required for the trainer.")
+                    val permissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        hasCameraPermission = granted
+                        if (!granted) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Разрешение на камеру обязательно для работы приложения",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+
+                    LaunchedEffect(Unit) {
+                        if (!hasCameraPermission) {
+                            permissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                    }
+
+                    if (hasCameraPermission) {
+                        AppNavigation(vm)
+                    }
                 }
             }
         }

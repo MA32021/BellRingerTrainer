@@ -14,7 +14,11 @@ import com.bellringer.trainer.cv.LandmarkerBridge
 import com.bellringer.trainer.cv.NoOpLandmarker
 import com.bellringer.trainer.gesture.LeftHandFsm
 import com.bellringer.trainer.gesture.RightHandFsm
-import com.bellringer.trainer.model.*
+import com.bellringer.trainer.model.GestureEvent
+import com.bellringer.trainer.model.HandFrame
+import com.bellringer.trainer.model.Landmark
+import com.bellringer.trainer.model.StrikeQuality
+import com.bellringer.trainer.model.TrainerUiState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,12 +42,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private lateinit var leftFsm: LeftHandFsm
     private lateinit var rightFsm: RightHandFsm
 
-    // ✅ Только интерфейс — никаких прямых ссылок на HandLandmarkerHelper
     private var landmarker: LandmarkerBridge? = null
+    private var cvInitialized = false
+
+    var onExitRequest: (() -> Unit)? = null
 
     init {
         viewModelScope.launch {
-            // ✅ Загрузка звуков ДО начала работы
             audio.initialize(listOf(
                 "podzvon_l1_10.ogg",
                 "podzvon_l2_11.ogg",
@@ -61,15 +66,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-
-
     private fun buildFsms(d: CalibrationData) {
-        leftFsm = LeftHandFsm { ev -> onEvent(ev) }
+        leftFsm = LeftHandFsm { ev -> onEvent(ev) }.apply {
+            velocityPeak = d.velocityPeak
+            armDist = d.armDist
+            panReturnDist = d.panReturnDist
+            strikeWindowMs = d.strikeWindowMs
+        }
         rightFsm = RightHandFsm(d.neutralWristAngleDeg) { ev -> onEvent(ev) }
     }
 
-    // ✅ Единственная версия initCv — с полной изоляцией MediaPipe
+    /**
+     * Инициализирует ТОЛЬКО landmarker (CV).
+     * Камера создаётся отдельно в UI — она не зависит от CV.
+     */
     fun initCv(context: Context) {
+        if (cvInitialized) return
+        cvInitialized = true
+
+        Log.d("CameraInit", "initCv: initializing landmarker")
+
         val isEmulator = Build.HARDWARE.contains("ranchu", ignoreCase = true) ||
                 Build.MODEL.contains("sdk_gphone", ignoreCase = true)
 
@@ -79,30 +95,14 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        // На реальном устройстве создаём настоящий хелпер через отдельную функцию
         landmarker = createRealLandmarker(context)
+        Log.d("CameraInit", "Landmarker initialized")
     }
 
     @androidx.annotation.Keep
     private fun createRealLandmarker(context: Context): LandmarkerBridge {
-        // Используем reflection, чтобы избежать статической ссылки на класс
-        // Это гарантирует, что ART не загрузит HandLandmarkerHelper при верификации AppViewModel
-        return try {
-            val clazz = Class.forName("com.bellringer.trainer.cv.HandLandmarkerHelper")
-            val constructor = clazz.getConstructor(
-                Context::class.java,
-                kotlin.jvm.functions.Function1::class.java
-            )
-            val callback: (HandFrame) -> Unit = { frame: HandFrame -> onFrame(frame) }
-            constructor.newInstance(context, callback) as LandmarkerBridge
-        } catch (e: Exception) {
-            Log.e("AppViewModel", "Failed to create HandLandmarkerHelper via reflection", e)
-            NoOpLandmarker()
-        }
+        return com.bellringer.trainer.cv.HandLandmarkerHelper(context) { frame -> onFrame(frame) }
     }
-
-
-
 
     fun onMirroredFrame(bmp: Bitmap, ts: Long) {
         landmarker?.detectAsync(bmp, ts)
@@ -134,6 +134,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun report(label: String, q: StrikeQuality) {
+        Log.d("OverlayDebug", "report() called: label='$label', quality=$q")
         _ui.value = _ui.value.copy(
             lastEventText = "$label — ${q.name}", lastQuality = q
         )
@@ -141,23 +142,50 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (q == StrikeQuality.CLEAN) flashClean.value = now else flashStuck.value = now
     }
 
+    fun savePadPositions(positions: List<Pair<Float, Float>>) {
+        viewModelScope.launch { store.save(_calib.value.copy(padPositions = positions)) }
+    }
+
+    fun updateVelocityPeak(value: Float) {
+        viewModelScope.launch { store.save(_calib.value.copy(velocityPeak = value)) }
+    }
+
+    fun updateArmDist(value: Float) {
+        viewModelScope.launch { store.save(_calib.value.copy(armDist = value)) }
+    }
+
+    fun updatePanReturnDist(value: Float) {
+        viewModelScope.launch { store.save(_calib.value.copy(panReturnDist = value)) }
+    }
+
+    fun updateStrikeWindowMs(value: Long) {
+        viewModelScope.launch { store.save(_calib.value.copy(strikeWindowMs = value)) }
+    }
+
+    fun updateNeutralAngle(value: Float) {
+        viewModelScope.launch { store.save(_calib.value.copy(neutralWristAngleDeg = value)) }
+    }
+
+    fun markCalibrated() {
+        viewModelScope.launch { store.save(_calib.value.copy(calibrated = true)) }
+    }
+
+    fun resetCalibration() {
+        viewModelScope.launch { store.save(CalibrationData()) }
+    }
+
     fun saveCalibration(panX: Float, panY: Float, neutralAngle: Float) {
-        viewModelScope.launch {
-            store.save(CalibrationData(panX, panY, neutralAngle, true))
-        }
+        viewModelScope.launch { store.save(CalibrationData(panX, panY, neutralAngle, true)) }
     }
-
-    override fun onCleared() {
-        landmarker?.close()
-    }
-
-    var onExitRequest: (() -> Unit)? = null
 
     fun onExitClicked() {
-        // Закрываем ресурсы перед выходом
         landmarker?.close()
         onExitRequest?.invoke()
     }
 
+    override fun onCleared() {
+        landmarker?.close()
+        audio.release()
+    }
 }
 

@@ -10,12 +10,6 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore by preferencesDataStore("calibration")
 
 /** Persists the frying-pan anchor (normalized) and neutral right-wrist angle. */
-data class CalibrationData(
-    val panX: Float = 0.30f,   // left of center
-    val panY: Float = 0.65f,   // waist level
-    val neutralWristAngleDeg: Float = 0f,
-    val calibrated: Boolean = false
-)
 
 class CalibrationStore(private val context: Context) {
     private object Keys {
